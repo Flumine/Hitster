@@ -462,7 +462,9 @@ function onCorrect(t) {
     setFb('ok','✅ Goed! "'+t.titel+'" — '+t.artiest+' ('+t.jaar+') 🎓 Afgerond!');
   } else {
     G.w[G.cur]=Math.max(1,G.w[G.cur]-1);
+    addToPool(); // eerste keer goed → pool groeit
     setFb('ok','✅ Goed! "'+t.titel+'" — '+t.artiest+' ('+t.jaar+')');
+  }
   }
   G.pendingNext=pickNext();
   updateStats();
