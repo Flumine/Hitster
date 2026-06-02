@@ -120,12 +120,29 @@ h1 em { color: #1DB954; font-style: normal; }
 .fb.ok  { background: rgba(29,185,84,.12);  color: #1DB954; border: 1px solid rgba(29,185,84,.25); }
 .fb.err { background: rgba(233,20,41,.12);  color: #ff5060; border: 1px solid rgba(233,20,41,.25); }
 .fb.inf { background: rgba(255,152,0,.12);  color: #ff9800; border: 1px solid rgba(255,152,0,.25); }
+
+/* Spotify Connect */
+.connect-btn {
+  background: #1e1e1e; color: #1DB954;
+  border: 1px solid #333; border-radius: 50px;
+  padding: 7px 20px; font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; letter-spacing: 0.3px;
+}
+.connect-btn:hover { border-color: #1DB954; }
+.connect-status {
+  display: none; width: 100%; max-width: 520px;
+  font-size: 0.8rem; text-align: center; padding: 6px 0;
+}
+.connect-status.on  { display: block; color: #555; }
+.connect-status.ok  { display: block; color: #1DB954; }
+.connect-status.err { display: block; color: #ff9800; }
 </style>
 </head>
 <body>
 
 <h1><em>HITSTER</em> Trainer</h1>
 <p class="sub">Nederlands &middot; 308 nummers &middot; Luister en raad</p>
+<button class="connect-btn" id="connectBtn">&#9835;&nbsp;Verbind Spotify</button>
 
 <div class="stats">
   <div class="stat"><div class="stat-n" id="sPool">10</div><div class="stat-l">Pool</div></div>
@@ -150,6 +167,7 @@ h1 em { color: #1DB954; font-style: normal; }
     <button class="play-btn" id="firstPlayBtn">&#9654;&nbsp;Luister</button>
   </div>
 </div>
+<div class="connect-status" id="connectStatus"></div>
 
 <div class="card">
   <div class="retype-banner" id="rtBanner">
@@ -197,28 +215,151 @@ const G = {
 
 const el = id => document.getElementById(id);
 
+// ── Spotify PKCE OAuth + Connect API ─────────────────────────────────────────
+const CLIENT_ID   = '302732b5cb7b4ca59ce7b440370e9110';
+const REDIRECT_URI = location.origin + location.pathname;
+const SCOPES = 'user-modify-playback-state user-read-playback-state';
+
+let spToken  = localStorage.getItem('sp_token');
+let spExpiry = parseInt(localStorage.getItem('sp_expiry') || '0');
+
+function tokenValid() { return !!spToken && Date.now() < spExpiry - 30000; }
+
+function b64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function randVerifier() { const a=new Uint8Array(32); crypto.getRandomValues(a); return b64url(a); }
+async function codeChallenge(v) {
+  return b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
+}
+
+async function loginSpotify() {
+  const v = randVerifier();
+  localStorage.setItem('sp_verifier', v);
+  const p = new URLSearchParams({
+    client_id: CLIENT_ID, response_type: 'code',
+    redirect_uri: REDIRECT_URI, scope: SCOPES,
+    code_challenge_method: 'S256', code_challenge: await codeChallenge(v)
+  });
+  location.href = 'https://accounts.spotify.com/authorize?' + p;
+}
+
+async function handleOAuthCallback(code) {
+  const v = localStorage.getItem('sp_verifier');
+  if (!v) return;
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({
+      client_id: CLIENT_ID, grant_type: 'authorization_code',
+      code, redirect_uri: REDIRECT_URI, code_verifier: v
+    })
+  });
+  const d = await r.json();
+  if (d.access_token) {
+    spToken  = d.access_token;
+    spExpiry = Date.now() + d.expires_in * 1000;
+    localStorage.setItem('sp_token',  spToken);
+    localStorage.setItem('sp_expiry', String(spExpiry));
+    localStorage.removeItem('sp_verifier');
+    history.replaceState({}, '', location.pathname);
+    updateConnectBtn();
+    setConnectStatus('✓ Spotify verbonden! Druk ▶ Luister om te starten.', 'ok');
+  }
+}
+
+function updateConnectBtn() {
+  const btn = el('connectBtn');
+  if (tokenValid()) {
+    btn.textContent = '✓ Spotify verbonden';
+    btn.style.cssText = 'background:#0a3d1f;color:#1DB954;border:1px solid #1DB954;border-radius:50px;padding:7px 20px;font-size:0.82rem;font-weight:600;cursor:pointer;';
+  } else {
+    btn.textContent = '\u266b\u00a0Verbind Spotify';
+    btn.style.cssText = '';
+  }
+}
+
+async function playViaConnect(spotifyId) {
+  let deviceId = '';
+  try {
+    const dr = await fetch('https://api.spotify.com/v1/me/player/devices', {
+      headers: {'Authorization':'Bearer '+spToken}
+    });
+    if (dr.status === 401) { spToken = null; localStorage.removeItem('sp_token'); updateConnectBtn(); return false; }
+    const dd = await dr.json();
+    const dev = dd.devices && (dd.devices.find(d=>d.is_active) || dd.devices[0]);
+    if (dev) deviceId = dev.id;
+  } catch(e) {}
+
+  if (!deviceId) return false;
+
+  const resp = await fetch('https://api.spotify.com/v1/me/player/play?device_id=' + deviceId, {
+    method: 'PUT',
+    headers: {'Authorization':'Bearer '+spToken,'Content-Type':'application/json'},
+    body: JSON.stringify({uris:['spotify:track:'+spotifyId], position_ms:0})
+  });
+  return resp.status === 204 || resp.status === 200;
+}
+
 // ── Spotify player ────────────────────────────────────────────────────────────
-// Called ONLY from click handlers (user gesture → autoplay allowed).
-// Destroys and recreates the iframe so the track ALWAYS starts from 0:00.
-function spotifyPlay(spotifyId) {
-  if (!spotifyId) return;
+function setConnectStatus(msg, type) {
+  const s = el('connectStatus');
+  s.textContent = msg;
+  s.className = 'connect-status ' + (type||'on');
+}
+
+function spawnIframe(spotifyId) {
   const wrap = document.querySelector('.player-wrap');
   const old  = el('spotifyFrame');
   if (old) old.remove();
   const f = document.createElement('iframe');
-  f.id     = 'spotifyFrame';
+  f.id = 'spotifyFrame';
   f.style.cssText = 'display:block;width:100%;height:80px;border:none;';
   f.setAttribute('allow', 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture');
   f.setAttribute('allowtransparency', 'true');
   f.src = 'https://open.spotify.com/embed/track/' + spotifyId + '?autoplay=1&theme=0&_=' + Date.now();
-  // Insert before the mask so the mask stays on top
   wrap.insertBefore(f, wrap.querySelector('.title-mask'));
+}
+
+function spotifyPlay(spotifyId) {
+  if (!spotifyId) return;
+
+  if (tokenValid()) {
+    // Reset iframe to blank zo oude embed niet zichtbaar blijft
+    const old = el('spotifyFrame');
+    if (old) old.src = 'about:blank';
+    setConnectStatus('\u266b Verbinden met Spotify\u2026', 'on');
+    playViaConnect(spotifyId).then(ok => {
+      if (ok) {
+        setConnectStatus('\u266b Speelt in Spotify \u2014 volledig nummer van het begin', 'ok');
+      } else {
+        setConnectStatus('\u26a0\ufe0f Geen actief Spotify-apparaat. Open de Spotify app en probeer opnieuw.', 'err');
+        spawnIframe(spotifyId);
+      }
+    }).catch(() => { setConnectStatus('', ''); spawnIframe(spotifyId); });
+    return;
+  }
+
+  // Geen token: gewone iframe (moet synchroon in click-handler)
+  el('connectStatus').className = 'connect-status';
+  spawnIframe(spotifyId);
 }
 
 el('firstPlayBtn').addEventListener('click', () => {
   spotifyPlay(TRACKS[G.cur].spotifyId);
   el('playerOverlay').classList.add('hidden');
 });
+
+el('connectBtn').addEventListener('click', loginSpotify);
+
+// Check OAuth callback
+(function() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if (code) handleOAuthCallback(code);
+  updateConnectBtn();
+})();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function norm(s) {
