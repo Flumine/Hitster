@@ -464,7 +464,6 @@ function onCorrect(t) {
     addToPool(); // eerste keer goed → pool groeit
     setFb('ok','✅ Goed! "'+t.titel+'" — '+t.artiest+' ('+t.jaar+')');
   }
-  }
   G.pendingNext=pickNext();
   updateStats();
   el('submitBtn').textContent='▶ Volgende nummer';
