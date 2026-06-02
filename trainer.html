@@ -465,9 +465,12 @@ function onWrong(t,tOk,aOk,yOk) {
   setDots(G.wrong[G.cur]); updateStats();
   if (G.wrong[G.cur]>=2) { enterRetype(t); return; }
   setFb('err','❌ Niet goed! Nog één kans…');
-  if (!tOk){el('iTitle').value='';el('iTitle').className='';}
-  if (!aOk){el('iArtist').value='';el('iArtist').className='';}
-  if (!yOk){el('iYear').value='';el('iYear').className='';}
+  if (tOk){el('iTitle').className='ok';el('iTitle').readOnly=true;}
+    else   {el('iTitle').value='';el('iTitle').className='';}
+  if (aOk){el('iArtist').className='ok';el('iArtist').readOnly=true;}
+    else   {el('iArtist').value='';el('iArtist').className='';}
+  if (yOk){el('iYear').className='ok';el('iYear').readOnly=true;}
+    else   {el('iYear').value='';el('iYear').className='';}
   if(!tOk)el('iTitle').focus();else if(!aOk)el('iArtist').focus();else el('iYear').focus();
 }
 
