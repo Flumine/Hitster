@@ -466,11 +466,11 @@ function onWrong(t,tOk,aOk,yOk) {
   if (G.wrong[G.cur]>=2) { enterRetype(t); return; }
   setFb('err','❌ Niet goed! Nog één kans…');
   if (tOk){el('iTitle').className='ok';el('iTitle').readOnly=true;}
-    else   {el('iTitle').value='';el('iTitle').className='';}
+    else   {el('iTitle').value='';el('iTitle').className='';el('iTitle').readOnly=false;}
   if (aOk){el('iArtist').className='ok';el('iArtist').readOnly=true;}
-    else   {el('iArtist').value='';el('iArtist').className='';}
+    else   {el('iArtist').value='';el('iArtist').className='';el('iArtist').readOnly=false;}
   if (yOk){el('iYear').className='ok';el('iYear').readOnly=true;}
-    else   {el('iYear').value='';el('iYear').className='';}
+    else   {el('iYear').value='';el('iYear').className='';el('iYear').readOnly=false;}
   if(!tOk)el('iTitle').focus();else if(!aOk)el('iArtist').focus();else el('iYear').focus();
 }
 
@@ -478,7 +478,7 @@ function enterRetype(t) {
   G.rt=true;
   el('rtBanner').className='retype-banner on';
   el('rtTitel').textContent=t.titel; el('rtArtiest').textContent=t.artiest; el('rtJaar').textContent=String(t.jaar);
-  ['iTitle','iArtist','iYear'].forEach(id=>{const e=el(id);e.value='';e.className='rt';});
+  ['iTitle','iArtist','iYear'].forEach(id=>{const e=el(id);e.value='';e.className='rt';e.readOnly=false;});
   el('iTitle').placeholder=t.titel; el('iArtist').placeholder=t.artiest; el('iYear').placeholder=String(t.jaar);
   el('submitBtn').textContent='Bevestig ✓';
   setFb('inf','🔁 Type het goede antwoord over om door te gaan');
